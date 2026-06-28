@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 import io
+import os
+import urllib.request
 from pathlib import Path
 
 import streamlit as st
 
-from db_setup import describe_database, ensure_database
 from plea_analysis import analyze_pleas, plea_rows
 from profession_analysis import analyze_professions, profession_rows
 from surname_search import (
@@ -25,6 +26,68 @@ from surname_search import (
 
 INTERVAL_OPTIONS = list(range(5, 255, 5))
 CHART_INTERVALS = 5
+
+APP_DIR = Path(__file__).resolve().parent
+FULL_DB = APP_DIR / "cp40.db"
+SUBSET_DB = APP_DIR / "cp40_web.db"
+
+
+def _database_url() -> str | None:
+    url = os.environ.get("CP40_DATABASE_URL", "").strip()
+    if url:
+        return url
+    try:
+        return st.secrets.get("database", {}).get("url")
+    except Exception:
+        return None
+
+
+def _database_path_override() -> Path | None:
+    override = os.environ.get("CP40_DATABASE_PATH", "").strip()
+    if override:
+        return Path(override)
+    try:
+        path = st.secrets.get("database", {}).get("path")
+        if path:
+            return Path(path)
+    except Exception:
+        pass
+    return None
+
+
+def describe_database(path: Path) -> str:
+    if path.resolve() == SUBSET_DB.resolve():
+        return "Web* subset (cp40_web.db)"
+    if path.resolve() == FULL_DB.resolve():
+        return "full database (cp40.db)"
+    return path.name
+
+
+def ensure_database() -> Path:
+    override = _database_path_override()
+    if override is not None:
+        if not override.is_file():
+            raise FileNotFoundError(f"Configured database not found: {override}")
+        return override
+    if FULL_DB.is_file():
+        return FULL_DB
+    if SUBSET_DB.is_file():
+        return SUBSET_DB
+    url = _database_url()
+    if not url:
+        raise FileNotFoundError(
+            "No database found. Commit cp40_web.db to the repo, or build cp40.db locally."
+        )
+    tmp_path = SUBSET_DB.with_suffix(".db.download")
+    try:
+        with urllib.request.urlopen(url, timeout=120) as response:
+            tmp_path.write_bytes(response.read())
+        tmp_path.replace(SUBSET_DB)
+    except Exception:
+        if tmp_path.is_file():
+            tmp_path.unlink(missing_ok=True)
+        raise
+    return SUBSET_DB
 
 st.set_page_config(page_title="CP40 Surname Search", page_icon="⚖️", layout="wide")
 
