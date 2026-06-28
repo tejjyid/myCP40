@@ -101,7 +101,12 @@ def role_filter_sql(role: Role, surnames: list[str]) -> tuple[str, list[str]]:
 
 def get_year_bounds(conn: sqlite3.Connection) -> tuple[int, int]:
     row = conn.execute(
-        "SELECT MIN(year), MAX(year) FROM cases WHERE year IS NOT NULL"
+        """
+        SELECT MIN(year), MAX(year) FROM cases
+        WHERE year IS NOT NULL
+          AND typeof(year) IN ('integer', 'real')
+          AND year BETWEEN 1300 AND 1700
+        """
     ).fetchone()
     if row[0] is None or row[1] is None:
         raise ValueError("Database has no dated cases")
